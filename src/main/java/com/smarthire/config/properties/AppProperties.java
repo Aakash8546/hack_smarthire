@@ -11,7 +11,8 @@ public record AppProperties(
         File file,
         Mail mail,
         Frontend frontend,
-        Video video
+        Video video,
+        Auth auth
 ) {
 
     public record Jwt(@NotBlank String secret, long accessTokenExpiration) {
@@ -27,5 +28,8 @@ public record AppProperties(
     }
 
     public record Video(@NotBlank String baseUrl, @NotBlank String provider) {
+    }
+
+    public record Auth(@NotBlank String resendOtpApiKey) {
     }
 }

@@ -2,9 +2,11 @@ package com.smarthire.service.impl;
 
 import java.time.OffsetDateTime;
 
+import com.smarthire.config.properties.AppProperties;
 import com.smarthire.dto.auth.AuthResponse;
 import com.smarthire.dto.auth.CurrentUserResponse;
 import com.smarthire.dto.auth.LoginRequest;
+import com.smarthire.dto.auth.ResendOtpRequest;
 import com.smarthire.dto.auth.SignupRequest;
 import com.smarthire.dto.auth.VerifyOtpRequest;
 import com.smarthire.entity.User;
@@ -34,6 +36,8 @@ public class AuthServiceImpl implements AuthService {
     private final EmailService emailService;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final AppProperties appProperties;
+
 
     @Override
     @Transactional
@@ -77,6 +81,23 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    @Transactional
+    public String resendOtp(ResendOtpRequest request, String apiKey) {
+        validateResendOtpApiKey(apiKey);
+        User user = userRepository.findByEmailIgnoreCase(request.email())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (user.isVerified()) {
+            return "User is already verified.";
+        }
+        String otp = OtpGenerator.generateOtp();
+        user.setOtpCode(otp);
+        user.setOtpExpiry(OffsetDateTime.now().plusMinutes(10));
+        userRepository.save(user);
+        emailService.sendOtpEmail(user, otp);
+        return "OTP resent successfully.";
+    }
+
+    @Override
     public AuthResponse login(LoginRequest request) {
         User user = userRepository.findByEmailIgnoreCase(request.email())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -95,5 +116,11 @@ public class AuthServiceImpl implements AuthService {
         User user = userRepository.findById(securityUser.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         return new CurrentUserResponse(user.getId(), user.getName(), user.getEmail(), user.getRole(), user.isVerified(), user.getSkills());
+    }
+
+    private void validateResendOtpApiKey(String apiKey) {
+        if (apiKey == null || apiKey.isBlank() || !apiKey.equals(appProperties.auth().resendOtpApiKey())) {
+            throw new UnauthorizedException("Invalid API key for resend OTP");
+        }
     }
 }
