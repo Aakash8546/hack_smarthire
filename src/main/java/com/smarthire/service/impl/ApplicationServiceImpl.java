@@ -1,120 +1,126 @@
 package com.smarthire.service.impl;
 
-import java.util.List;
+import java.time.OffsetDateTime;
 
-import com.smarthire.dto.common.ApplicationResponse;
-import com.smarthire.dto.recruiter.ApplyJobRequest;
-import com.smarthire.dto.recruiter.UpdateApplicationStatusRequest;
-import com.smarthire.entity.Chat;
-import com.smarthire.entity.Job;
-import com.smarthire.entity.JobApplication;
-import com.smarthire.entity.Resume;
+import com.smarthire.config.properties.AppProperties;
+import com.smarthire.dto.auth.AuthResponse;
+import com.smarthire.dto.auth.CurrentUserResponse;
+import com.smarthire.dto.auth.LoginRequest;
+import com.smarthire.dto.auth.ResendOtpRequest;
+import com.smarthire.dto.auth.SignupRequest;
+import com.smarthire.dto.auth.VerifyOtpRequest;
 import com.smarthire.entity.User;
-import com.smarthire.entity.enums.ApplicationStatus;
-import com.smarthire.entity.enums.UserRole;
 import com.smarthire.exception.BadRequestException;
 import com.smarthire.exception.ResourceNotFoundException;
-import com.smarthire.repository.ChatRepository;
-import com.smarthire.repository.JobApplicationRepository;
-import com.smarthire.repository.JobRepository;
-import com.smarthire.repository.ResumeRepository;
+import com.smarthire.exception.UnauthorizedException;
 import com.smarthire.repository.UserRepository;
-import com.smarthire.service.ApplicationService;
+import com.smarthire.security.JwtService;
+import com.smarthire.security.SecurityUser;
+import com.smarthire.service.AuthService;
+import com.smarthire.service.EmailService;
+import com.smarthire.util.OtpGenerator;
 import com.smarthire.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
-public class ApplicationServiceImpl implements ApplicationService {
+public class AuthServiceImpl implements AuthService {
 
-    private final JobApplicationRepository jobApplicationRepository;
-    private final JobRepository jobRepository;
     private final UserRepository userRepository;
-    private final ResumeRepository resumeRepository;
-    private final ChatRepository chatRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final EmailService emailService;
+    private final AuthenticationManager authenticationManager;
+    private final JwtService jwtService;
+    private final AppProperties appProperties;
+
 
     @Override
     @Transactional
-    public ApplicationResponse applyToJob(Long jobId, ApplyJobRequest request) {
-        User candidate = getCurrentCandidate();
-        Job job = jobRepository.findById(jobId)
-                .orElseThrow(() -> new ResourceNotFoundException("Job not found"));
-        if (jobApplicationRepository.existsByCandidateAndJob(candidate, job)) {
-            throw new BadRequestException("You have already applied to this job");
+    public String signup(SignupRequest request) {
+        if (userRepository.existsByEmailIgnoreCase(request.email())) {
+            throw new BadRequestException("Email is already registered");
         }
-        Resume resume = resumeRepository.findByCandidate(candidate)
-                .orElseThrow(() -> new BadRequestException("Upload a resume before applying"));
-        if (resume.getExtractedSkills().isEmpty()) {
-            throw new BadRequestException("Resume analysis is required before applying");
-        }
-        JobApplication application = new JobApplication();
-        application.setCandidate(candidate);
-        application.setJob(job);
-        application.setStatus(ApplicationStatus.PENDING);
-        application.setCoverLetter(request.coverLetter());
-        JobApplication savedApplication = jobApplicationRepository.save(application);
-
-        Chat chat = new Chat();
-        chat.setApplication(savedApplication);
-        chat.setCandidate(candidate);
-        chat.setRecruiter(job.getRecruiter());
-        chatRepository.save(chat);
-
-        savedApplication.setChat(chat);
-        return toResponse(savedApplication);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<ApplicationResponse> getMyApplications() {
-        User candidate = getCurrentCandidate();
-        return jobApplicationRepository.findAllByCandidateOrderByCreatedAtDesc(candidate).stream()
-                .map(this::toResponse)
-                .toList();
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<ApplicationResponse> getRecruiterApplications() {
-        User recruiter = getCurrentRecruiter();
-        return jobApplicationRepository.findAllByJobRecruiterOrderByCreatedAtDesc(recruiter).stream()
-                .map(this::toResponse)
-                .toList();
+        User user = new User();
+        user.setName(request.name());
+        user.setEmail(request.email().trim().toLowerCase());
+        user.setPassword(passwordEncoder.encode(request.password()));
+        user.setRole(request.userType());
+        user.setVerified(false);
+        String otp = OtpGenerator.generateOtp();
+        user.setOtpCode(otp);
+        user.setOtpExpiry(OffsetDateTime.now().plusMinutes(10));
+        userRepository.save(user);
+        emailService.sendOtpEmail(user, otp);
+        return "Signup successful. Please verify the OTP sent to your email.";
     }
 
     @Override
     @Transactional
-    public ApplicationResponse updateStatus(Long applicationId, UpdateApplicationStatusRequest request) {
-        User recruiter = getCurrentRecruiter();
-        JobApplication application = jobApplicationRepository.findByIdAndJobRecruiter(applicationId, recruiter)
-                .orElseThrow(() -> new ResourceNotFoundException("Application not found for recruiter"));
-        application.setStatus(request.status());
-        return toResponse(jobApplicationRepository.save(application));
-    }
-
-    private User getCurrentCandidate() {
-        User user = userRepository.findById(SecurityUtils.getCurrentUser().getId())
+    public String verifyOtp(VerifyOtpRequest request) {
+        User user = userRepository.findByEmailIgnoreCase(request.email())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        if (user.getRole() != UserRole.CANDIDATE) {
-            throw new BadRequestException("Only candidates can perform this action");
+        if (user.isVerified()) {
+            return "User is already verified.";
         }
-        return user;
+        if (user.getOtpCode() == null || !user.getOtpCode().equals(request.otp())) {
+            throw new BadRequestException("Invalid OTP");
+        }
+        if (user.getOtpExpiry() == null || user.getOtpExpiry().isBefore(OffsetDateTime.now())) {
+            throw new BadRequestException("OTP has expired");
+        }
+        user.setVerified(true);
+        user.setOtpCode(null);
+        user.setOtpExpiry(null);
+        userRepository.save(user);
+        return "OTP verified successfully.";
     }
 
-    private User getCurrentRecruiter() {
-        User user = userRepository.findById(SecurityUtils.getCurrentUser().getId())
+    @Override
+    @Transactional
+    public String resendOtp(ResendOtpRequest request, String apiKey) {
+        validateResendOtpApiKey(apiKey);
+        User user = userRepository.findByEmailIgnoreCase(request.email())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        if (user.getRole() != UserRole.RECRUITER) {
-            throw new BadRequestException("Only recruiters can perform this action");
+        if (user.isVerified()) {
+            return "User is already verified.";
         }
-        return user;
+        String otp = OtpGenerator.generateOtp();
+        user.setOtpCode(otp);
+        user.setOtpExpiry(OffsetDateTime.now().plusMinutes(10));
+        userRepository.save(user);
+        emailService.sendOtpEmail(user, otp);
+        return "OTP resent successfully.";
     }
 
-    private ApplicationResponse toResponse(JobApplication application) {
-        return new ApplicationResponse(application.getId(), application.getCandidate().getId(), application.getCandidate().getName(),
-                application.getJob().getId(), application.getJob().getTitle(), application.getStatus(), application.getCoverLetter(),
-                application.getChat() != null ? application.getChat().getId() : null, application.getCreatedAt());
+    @Override
+    public AuthResponse login(LoginRequest request) {
+        User user = userRepository.findByEmailIgnoreCase(request.email())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (!user.isVerified()) {
+            throw new UnauthorizedException("Please verify your account before logging in");
+        }
+        authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(request.email(), request.password()));
+        SecurityUser securityUser = new SecurityUser(user);
+        return new AuthResponse(jwtService.generateToken(securityUser), user.getId(), user.getName(), user.getEmail(), user.getRole());
+    }
+
+    @Override
+    public CurrentUserResponse getCurrentUser() {
+        SecurityUser securityUser = SecurityUtils.getCurrentUser();
+        User user = userRepository.findById(securityUser.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return new CurrentUserResponse(user.getId(), user.getName(), user.getEmail(), user.getRole(), user.isVerified(), user.getSkills());
+    }
+
+    private void validateResendOtpApiKey(String apiKey) {
+        if (apiKey == null || apiKey.isBlank() || !apiKey.equals(appProperties.auth().resendOtpApiKey())) {
+            throw new UnauthorizedException("Invalid API key for resend OTP");
+        }
     }
 }
