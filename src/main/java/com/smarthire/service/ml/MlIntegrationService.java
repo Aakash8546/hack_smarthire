@@ -2,6 +2,7 @@ package com.smarthire.service.ml;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -14,13 +15,14 @@ import com.smarthire.entity.Job;
 import com.smarthire.entity.Resume;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClientException;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
 @Slf4j
@@ -34,15 +36,15 @@ public class MlIntegrationService {
     public MlDtos.ResumeAnalysisResult analyzeResume(String fileName, byte[] fileBytes) {
         if (mlApiProperties.enabled()) {
             try {
-                Map<String, Object> response = post("/resume/analyze", Map.of(
-                        "fileName", fileName,
-                        "contentBase64", java.util.Base64.getEncoder().encodeToString(fileBytes)
-                ));
-                return new MlDtos.ResumeAnalysisResult(
-                        ((Number) response.getOrDefault("resumeScore", 75.0)).doubleValue(),
-                        castList(response.get("skills")),
-                        String.valueOf(response.getOrDefault("summary", "Resume analyzed by external ML service"))
-                );
+                Map<String, Object> response = analyzeResumeWithMultipart(fileName, fileBytes);
+                log.info("Raw ML resume analysis response: {}", response);
+                Map<String, Object> results = extractResumeContractResults(response);
+                List<String> skills = extractResumeContractSkills(response, results);
+                Double experienceYears = extractResumeContractExperienceYears(response, results);
+                Double score = extractResumeScore(response, results, skills);
+                String analyzedFileName = extractResumeContractFileName(response, fileName);
+                String summary = "Resume analyzed successfully using external ML model.";
+                return new MlDtos.ResumeAnalysisResult(analyzedFileName, score, skills, summary, experienceYears, results, response);
             } catch (Exception exception) {
                 log.warn("ML resume analysis failed, using fallback: {}", exception.getMessage());
             }
@@ -51,9 +53,13 @@ public class MlIntegrationService {
         String text = new String(fileBytes);
         Set<String> discoveredSkills = detectSkills(text);
         double score = Math.min(98.0, 55.0 + discoveredSkills.size() * 5.5);
-        return new MlDtos.ResumeAnalysisResult(score, new ArrayList<>(discoveredSkills),
+        Map<String, Object> results = new HashMap<>();
+        results.put("skills", new ArrayList<>(discoveredSkills));
+        results.put("experience_years", 0.0);
+        return new MlDtos.ResumeAnalysisResult(fileName, score, new ArrayList<>(discoveredSkills),
                 "Fallback analysis completed. The resume shows strength in " +
-                        (discoveredSkills.isEmpty() ? "general software engineering" : String.join(", ", discoveredSkills)) + ".");
+                        (discoveredSkills.isEmpty() ? "general software engineering" : String.join(", ", discoveredSkills)) + ".",
+                0.0, results, Map.of("file_name", fileName, "results", results));
     }
 
     public MlDtos.RecommendationResult recommendJobs(Resume resume, List<Job> jobs) {
@@ -158,12 +164,41 @@ public class MlIntegrationService {
     private Map<String, Object> post(String path, Map<String, Object> payload) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        addApiKeyHeader(headers);
         return mlRestTemplate.exchange(
                 mlApiProperties.baseUrl() + path,
                 HttpMethod.POST,
                 new HttpEntity<>(payload, headers),
-                new ParameterizedTypeReference<Map<String, Object>>() {
-                }).getBody();
+                Map.class).getBody();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> analyzeResumeWithMultipart(String fileName, byte[] fileBytes) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        addApiKeyHeader(headers);
+
+        ByteArrayResource resource = new ByteArrayResource(fileBytes) {
+            @Override
+            public String getFilename() {
+                return fileName;
+            }
+        };
+
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("file", resource);
+
+        return mlRestTemplate.exchange(
+                mlApiProperties.baseUrl() + mlApiProperties.resumeAnalyzePath(),
+                HttpMethod.POST,
+                new HttpEntity<>(body, headers),
+                Map.class).getBody();
+    }
+
+    private void addApiKeyHeader(HttpHeaders headers) {
+        if (mlApiProperties.apiKey() != null && !mlApiProperties.apiKey().isBlank()) {
+            headers.add(mlApiProperties.apiKeyHeaderName(), mlApiProperties.apiKey());
+        }
     }
 
     private Set<String> detectSkills(String text) {
@@ -193,5 +228,165 @@ public class MlIntegrationService {
             return list.stream().map(item -> Long.valueOf(String.valueOf(item))).toList();
         }
         return List.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> extractMap(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> normalized = new HashMap<>();
+            map.forEach((key, mapValue) -> normalized.put(String.valueOf(key), mapValue));
+            return normalized;
+        }
+        return Map.of();
+    }
+
+    private Map<String, Object> extractPrimaryResults(Map<String, Object> response) {
+        List<String> resultKeys = List.of("results", "result", "data", "analysis", "response");
+        for (String key : resultKeys) {
+            Map<String, Object> nested = extractMap(response.get(key));
+            if (!nested.isEmpty()) {
+                return nested;
+            }
+        }
+        return response;
+    }
+
+    private Map<String, Object> extractResumeContractResults(Map<String, Object> response) {
+        Map<String, Object> result = extractMap(response.get("result"));
+        if (!result.isEmpty()) {
+            return result;
+        }
+        result = extractMap(response.get("results"));
+        if (!result.isEmpty()) {
+            return result;
+        }
+        return extractPrimaryResults(response);
+    }
+
+    private List<String> extractResumeContractSkills(Map<String, Object> response, Map<String, Object> results) {
+        List<String> skills = castList(results.get("skills"));
+        if (!skills.isEmpty()) {
+            return skills;
+        }
+        skills = castList(response.get("skills"));
+        if (!skills.isEmpty()) {
+            return skills;
+        }
+        return extractSkills(response, results);
+    }
+
+    private Double extractResumeContractExperienceYears(Map<String, Object> response, Map<String, Object> results) {
+        Double value = extractDouble(results.get("experience_years"), null);
+        if (value != null) {
+            return value;
+        }
+        value = extractDouble(response.get("experience_years"), null);
+        if (value != null) {
+            return value;
+        }
+        return extractExperienceYears(response, results);
+    }
+
+    private String extractResumeContractFileName(Map<String, Object> response, String defaultValue) {
+        return extractFirstString(response, defaultValue,
+                "filename", "file_name", "fileName", "document_name", "documentName");
+    }
+
+    private List<String> extractSkills(Map<String, Object> response, Map<String, Object> results) {
+        for (String key : List.of("skills", "extracted_skills", "extractedSkills", "technical_skills",
+                "technicalSkills", "matched_skills", "matchedSkills")) {
+            List<String> skills = castList(response.get(key));
+            if (!skills.isEmpty()) {
+                return skills;
+            }
+        }
+        for (String key : List.of("skills", "extracted_skills", "extractedSkills", "technical_skills",
+                "technicalSkills", "matched_skills", "matchedSkills")) {
+            List<String> skills = castList(results.get(key));
+            if (!skills.isEmpty()) {
+                return skills;
+            }
+        }
+        Object rawSkillsText = extractFirstPresent(response, results,
+                "skills_text", "skillsText", "skill_summary", "skillSummary");
+        if (rawSkillsText instanceof String rawText && !rawText.isBlank()) {
+            return List.of(rawText.split(",")).stream()
+                    .map(String::trim)
+                    .filter(value -> !value.isBlank())
+                    .toList();
+        }
+        return List.of();
+    }
+
+    private Double extractExperienceYears(Map<String, Object> response, Map<String, Object> results) {
+        for (String key : List.of("experience_years", "experienceYears", "years_of_experience",
+                "yearsOfExperience", "experience", "total_experience")) {
+            Double value = extractDouble(response.get(key), null);
+            if (value != null) {
+                return value;
+            }
+        }
+        for (String key : List.of("experience_years", "experienceYears", "years_of_experience",
+                "yearsOfExperience", "experience", "total_experience")) {
+            Double value = extractDouble(results.get(key), null);
+            if (value != null) {
+                return value;
+            }
+        }
+        return 0.0;
+    }
+
+    private Double extractResumeScore(Map<String, Object> response, Map<String, Object> results, List<String> skills) {
+        for (String key : List.of("resumeScore", "resume_score", "score", "match_score", "matchScore")) {
+            Double value = extractDouble(response.get(key), null);
+            if (value != null) {
+                return value;
+            }
+        }
+        for (String key : List.of("resumeScore", "resume_score", "score", "match_score", "matchScore")) {
+            Double value = extractDouble(results.get(key), null);
+            if (value != null) {
+                return value;
+            }
+        }
+        return Math.min(98.0, 55.0 + skills.size() * 5.5);
+    }
+
+    private Object extractFirstPresent(Map<String, Object> response, Map<String, Object> results, String... keys) {
+        for (String key : keys) {
+            if (response.containsKey(key) && response.get(key) != null) {
+                return response.get(key);
+            }
+        }
+        for (String key : keys) {
+            if (results.containsKey(key) && results.get(key) != null) {
+                return results.get(key);
+            }
+        }
+        return null;
+    }
+
+    private String extractFirstString(Map<String, Object> response, String defaultValue, String... keys) {
+        for (String key : keys) {
+            Object value = response.get(key);
+            if (value != null && !String.valueOf(value).isBlank()) {
+                return String.valueOf(value);
+            }
+        }
+        return defaultValue;
+    }
+
+    private Double extractDouble(Object value, Double defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        try {
+            return Double.parseDouble(String.valueOf(value));
+        } catch (NumberFormatException exception) {
+            return defaultValue;
+        }
     }
 }

@@ -1,13 +1,22 @@
 package com.smarthire.service.ml;
 
 import java.util.List;
+import java.util.Map;
 
 public final class MlDtos {
 
     private MlDtos() {
     }
 
-    public record ResumeAnalysisResult(Double score, List<String> skills, String summary) {
+    public record ResumeAnalysisResult(
+            String analyzedFileName,
+            Double score,
+            List<String> skills,
+            String summary,
+            Double experienceYears,
+            Map<String, Object> results,
+            Map<String, Object> rawResponse
+    ) {
     }
 
     public record RecommendationResult(List<Long> recommendedJobIds, String reason) {
