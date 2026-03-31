@@ -4,6 +4,8 @@ import java.util.List;
 
 import com.smarthire.dto.candidate.JobRecommendationResponse;
 import com.smarthire.dto.candidate.MockInterviewResponse;
+import com.smarthire.dto.candidate.ResumeAnalysisResponse;
+import com.smarthire.dto.candidate.ResumeExistsResponse;
 import com.smarthire.dto.candidate.ResumeUploadResponse;
 import com.smarthire.dto.common.ApplicationResponse;
 import com.smarthire.dto.common.JobResponse;
@@ -43,9 +45,24 @@ public class CandidateController {
         return ResponseEntity.ok(resumeService.uploadResume(file));
     }
 
+    @PostMapping(value = "/profile/resume", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ResumeUploadResponse> uploadResumeToProfile(@RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(resumeService.uploadResume(file));
+    }
+
     @DeleteMapping("/resume")
     public ResponseEntity<String> deleteResume() {
         return ResponseEntity.ok(resumeService.deleteResume());
+    }
+
+    @GetMapping("/profile/resume/exists")
+    public ResponseEntity<ResumeExistsResponse> hasResume() {
+        return ResponseEntity.ok(resumeService.hasResume(com.smarthire.util.SecurityUtils.getCurrentUser().getId()));
+    }
+
+    @GetMapping("/profile/resume/analysis")
+    public ResponseEntity<ResumeAnalysisResponse> getResumeAnalysis() {
+        return ResponseEntity.ok(resumeService.getResumeAnalysis(com.smarthire.util.SecurityUtils.getCurrentUser().getId()));
     }
 
     @GetMapping("/jobs")

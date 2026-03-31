@@ -9,7 +9,6 @@ import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.Lob;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import lombok.Getter;
@@ -29,6 +28,9 @@ public class Resume extends BaseEntity {
     private String fileName;
 
     @Column(nullable = false)
+    private String originalFileName;
+
+    @Column(nullable = false)
     private String filePath;
 
     @Column(nullable = false)
@@ -39,7 +41,12 @@ public class Resume extends BaseEntity {
     @Column(name = "skill")
     private List<String> extractedSkills = new ArrayList<>();
 
-    @Lob
-    @Column(length = 4000)
+    @Column(columnDefinition = "TEXT")
     private String summary;
+
+    @Column
+    private Double experienceYears;
+
+    @Column(columnDefinition = "TEXT")
+    private String analysisResponseJson;
 }
