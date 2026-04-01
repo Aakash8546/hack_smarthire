@@ -1,13 +1,13 @@
 package com.smarthire.entity;
 
 import com.smarthire.entity.enums.InterviewType;
+import com.smarthire.entity.enums.MockInterviewSessionStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.Getter;
@@ -31,19 +31,34 @@ public class Interview extends BaseEntity {
     @Column(nullable = false)
     private InterviewType type;
 
-    @Lob
-    @Column(length = 5000)
+    @Column(columnDefinition = "TEXT")
     private String technicalAnalysis;
 
-    @Lob
-    @Column(length = 5000)
+    @Column(columnDefinition = "TEXT")
     private String behavioralAnalysis;
 
     private String meetingRoomId;
 
     private String meetingUrl;
 
-    @Lob
-    @Column(length = 5000)
+    @Column(columnDefinition = "TEXT")
     private String cheatingDetectionResult;
+
+    @Column(columnDefinition = "TEXT")
+    private String mockInterviewQuestionsJson;
+
+    @Column(columnDefinition = "TEXT")
+    private String mockInterviewAnswersJson;
+
+    private Integer currentQuestionIndex;
+
+    @Column(nullable = false)
+    private boolean completed;
+
+    @Column(columnDefinition = "TEXT")
+    private String mockInterviewAnalysisJson;
+
+    @Enumerated(EnumType.STRING)
+    @Column
+    private MockInterviewSessionStatus sessionStatus;
 }
