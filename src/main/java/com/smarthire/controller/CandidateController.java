@@ -3,10 +3,15 @@ package com.smarthire.controller;
 import java.util.List;
 
 import com.smarthire.dto.candidate.JobRecommendationResponse;
+import com.smarthire.dto.candidate.MockInterviewQuestionResponse;
 import com.smarthire.dto.candidate.MockInterviewResponse;
+import com.smarthire.dto.candidate.MockInterviewResultResponse;
 import com.smarthire.dto.candidate.ResumeAnalysisResponse;
 import com.smarthire.dto.candidate.ResumeExistsResponse;
 import com.smarthire.dto.candidate.ResumeUploadResponse;
+import com.smarthire.dto.candidate.StartMockInterviewResponse;
+import com.smarthire.dto.candidate.SubmitMockInterviewAnswerRequest;
+import com.smarthire.dto.candidate.SubmitMockInterviewAnswerResponse;
 import com.smarthire.dto.common.ApplicationResponse;
 import com.smarthire.dto.common.JobResponse;
 import com.smarthire.dto.recruiter.ApplyJobRequest;
@@ -89,5 +94,31 @@ public class CandidateController {
     @PostMapping("/mock-interview")
     public ResponseEntity<MockInterviewResponse> createMockInterview() {
         return ResponseEntity.ok(interviewService.createMockInterview());
+    }
+
+    @GetMapping("/mock-interview/questions")
+    public ResponseEntity<MockInterviewQuestionResponse> getMockInterviewQuestions() {
+        return ResponseEntity.ok(interviewService.getMockInterviewQuestions());
+    }
+
+    @PostMapping("/mock-interview/session/start")
+    public ResponseEntity<StartMockInterviewResponse> startMockInterviewSession() {
+        return ResponseEntity.ok(interviewService.startMockInterviewSession());
+    }
+
+    @PostMapping("/mock-interview/session/{interviewId}/answer")
+    public ResponseEntity<SubmitMockInterviewAnswerResponse> submitMockInterviewAnswer(@PathVariable Long interviewId,
+                                                                                       @Valid @RequestBody SubmitMockInterviewAnswerRequest request) {
+        return ResponseEntity.ok(interviewService.submitMockInterviewAnswer(interviewId, request));
+    }
+
+    @GetMapping("/mock-interview/session/{interviewId}/result")
+    public ResponseEntity<MockInterviewResultResponse> getMockInterviewResult(@PathVariable Long interviewId) {
+        return ResponseEntity.ok(interviewService.getMockInterviewResult(interviewId));
+    }
+
+    @DeleteMapping("/mock-interview/session/{interviewId}")
+    public ResponseEntity<?> endMockInterviewSession(@PathVariable Long interviewId) {
+        return ResponseEntity.ok(interviewService.endMockInterviewSession(interviewId));
     }
 }
