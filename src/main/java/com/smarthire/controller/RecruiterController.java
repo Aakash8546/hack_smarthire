@@ -46,6 +46,16 @@ public class RecruiterController {
         return ResponseEntity.ok(jobService.getMyJobs());
     }
 
+    @GetMapping("/jobs/{jobId}/applications")
+    public ResponseEntity<List<ApplicationResponse>> getApplicationsForJob(@PathVariable Long jobId) {
+        return ResponseEntity.ok(jobService.getApplicationsForJob(jobId));
+    }
+
+    @PutMapping("/jobs/{jobId}/status")
+    public ResponseEntity<JobResponse> toggleJobStatus(@PathVariable Long jobId) {
+        return ResponseEntity.ok(jobService.toggleJobStatus(jobId));
+    }
+
     @GetMapping("/applications")
     public ResponseEntity<List<ApplicationResponse>> getRecruiterApplications() {
         return ResponseEntity.ok(applicationService.getRecruiterApplications());
