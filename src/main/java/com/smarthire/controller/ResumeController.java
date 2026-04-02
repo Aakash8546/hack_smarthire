@@ -22,10 +22,10 @@ public class ResumeController {
 
     private final ResumeService resumeService;
 
-    @GetMapping("/{candidateId}/download")
+    @GetMapping("/{resumeId}/download")
     @PreAuthorize("hasRole('CANDIDATE') or hasRole('RECRUITER')")
-    public ResponseEntity<Resource> downloadResume(@PathVariable Long candidateId) {
-        ResumeDownloadResponse response = resumeService.downloadResume(candidateId);
+    public ResponseEntity<Resource> downloadResume(@PathVariable Long resumeId) {
+        ResumeDownloadResponse response = resumeService.downloadResume(resumeId);
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + response.fileName() + "\"")
