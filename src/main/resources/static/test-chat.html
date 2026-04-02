@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartHire Chat Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 24px;
+            background: #f4f7fb;
+            color: #1f2937;
+        }
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        }
+        h1 {
+            margin-top: 0;
+        }
+        .grid {
+            display: grid;
+            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+        input, textarea, button {
+            width: 100%;
+            box-sizing: border-box;
+            border-radius: 10px;
+            border: 1px solid #cbd5e1;
+            padding: 12px;
+            font-size: 14px;
+        }
+        textarea {
+            min-height: 90px;
+            resize: vertical;
+        }
+        button {
+            cursor: pointer;
+            background: #2563eb;
+            color: #ffffff;
+            border: none;
+            font-weight: 600;
+        }
+        button.secondary {
+            background: #475569;
+        }
+        .row {
+            display: flex;
+            gap: 12px;
+            margin-top: 12px;
+        }
+        .row button {
+            flex: 1;
+        }
+        .status {
+            margin: 16px 0;
+            padding: 12px;
+            border-radius: 10px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            font-size: 14px;
+        }
+        .messages {
+            margin-top: 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            background: #f8fafc;
+            padding: 12px;
+            min-height: 220px;
+            max-height: 420px;
+            overflow-y: auto;
+        }
+        .message {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 10px;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+        }
+        .meta {
+            font-size: 12px;
+            color: #64748b;
+            margin-bottom: 4px;
+        }
+        code {
+            background: #e2e8f0;
+            padding: 2px 6px;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>SmartHire Chat Test</h1>
+    <p>Use this page to test REST history and WebSocket real-time chat.</p>
+
+    <div class="grid">
+        <div>
+            <label for="token">JWT Token</label>
+            <textarea id="token" placeholder="Paste Bearer token only, without the word Bearer"></textarea>
+        </div>
+        <div>
+            <label for="chatRoomId">Chat Room ID</label>
+            <input id="chatRoomId" type="number" placeholder="1">
+
+            <label for="applicationId" style="margin-top: 12px;">Application ID (for REST send)</label>
+            <input id="applicationId" type="number" placeholder="1">
+        </div>
+    </div>
+
+    <div class="row">
+        <button id="connectBtn">Connect WebSocket</button>
+        <button id="historyBtn" class="secondary">Load Chat History</button>
+    </div>
+
+    <div class="status" id="statusBox">Disconnected</div>
+
+    <div class="grid">
+        <div>
+            <label for="messageContent">Message</label>
+            <textarea id="messageContent" placeholder="Type a chat message..."></textarea>
+            <div class="row">
+                <button id="sendWsBtn">Send via WebSocket</button>
+                <button id="sendRestBtn" class="secondary">Send via REST</button>
+            </div>
+        </div>
+        <div>
+            <label>Instructions</label>
+            <div class="messages">
+                <div class="message">
+                    <div class="meta">1. Login and copy the JWT token</div>
+                    <div>Paste only the token value, not <code>Bearer </code>.</div>
+                </div>
+                <div class="message">
+                    <div class="meta">2. Enter chat room and application ids</div>
+                    <div>Use the chat room id from apply/init chat response.</div>
+                </div>
+                <div class="message">
+                    <div class="meta">3. Connect and test</div>
+                    <div>Use WebSocket for live messaging and REST for history.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h3>Messages</h3>
+    <div class="messages" id="messages"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7/bundles/stomp.umd.min.js"></script>
+<script>
+    const statusBox = document.getElementById("statusBox");
+    const messagesBox = document.getElementById("messages");
+    const tokenInput = document.getElementById("token");
+    const chatRoomIdInput = document.getElementById("chatRoomId");
+    const applicationIdInput = document.getElementById("applicationId");
+    const messageContentInput = document.getElementById("messageContent");
+
+    let stompClient = null;
+
+    function setStatus(text) {
+        statusBox.textContent = text;
+    }
+
+    function normalizeToken(rawToken) {
+        return rawToken.replace(/^Bearer\s+/i, "").replace(/\s+/g, "").trim();
+    }
+
+    function appendMessage(payload) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "message";
+        wrapper.innerHTML = `
+            <div class="meta">
+                senderId=${payload.senderId} | receiverId=${payload.receiverId} | status=${payload.status} | ${payload.createdAt || ""}
+            </div>
+            <div><strong>${payload.senderName || "Unknown"}:</strong> ${payload.content || ""}</div>
+        `;
+        messagesBox.appendChild(wrapper);
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+    }
+
+    async function loadHistory() {
+        const token = normalizeToken(tokenInput.value);
+        const chatRoomId = chatRoomIdInput.value.trim();
+        if (!token || !chatRoomId) {
+            setStatus("Token and chatRoomId are required to load history.");
+            return;
+        }
+
+        const response = await fetch(`/api/chat/${chatRoomId}/messages`, {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        });
+        const data = await response.json();
+        messagesBox.innerHTML = "";
+        if (!response.ok) {
+            setStatus(data.message || "Failed to load history");
+            return;
+        }
+        data.forEach(appendMessage);
+        setStatus(`Loaded ${data.length} messages.`);
+    }
+
+    function connectWebSocket() {
+        const token = normalizeToken(tokenInput.value);
+        const chatRoomId = chatRoomIdInput.value.trim();
+        if (!token || !chatRoomId) {
+            setStatus("Token and chatRoomId are required to connect.");
+            return;
+        }
+
+        const connectHeaders = {
+            Authorization: `Bearer ${token}`,
+            token: token
+        };
+
+        stompClient = new StompJs.Client({
+            brokerURL: `ws://${window.location.host}/ws-native?token=${encodeURIComponent(token)}`,
+            connectHeaders: connectHeaders,
+            debug: function (message) {
+                console.log(message);
+            },
+            reconnectDelay: 5000,
+            connectionTimeout: 10000,
+            beforeConnect: function () {
+                setStatus("Connecting...");
+            },
+            onConnect: function () {
+                setStatus(`Connected to chat room ${chatRoomId}`);
+                stompClient.subscribe(`/topic/chat/${chatRoomId}`, function (message) {
+                    appendMessage(JSON.parse(message.body));
+                });
+                stompClient.subscribe(`/user/queue/chat-notifications`, function (message) {
+                    console.log("Notification", JSON.parse(message.body));
+                });
+            },
+            onStompError: function (frame) {
+                setStatus(`STOMP error: ${frame.headers["message"] || "Unknown error"}`);
+            },
+            onWebSocketClose: function (event) {
+                setStatus(`Native WebSocket closed: code=${event.code || "n/a"} reason=${event.reason || "n/a"}. Retrying with SockJS...`);
+                if (stompClient && !stompClient.connected) {
+                    connectWithSockJs(token, chatRoomId, connectHeaders);
+                }
+            },
+            onWebSocketError: function () {
+                setStatus("Native WebSocket connection error. Retrying with SockJS...");
+                connectWithSockJs(token, chatRoomId, connectHeaders);
+            }
+        });
+        stompClient.activate();
+    }
+
+    function connectWithSockJs(token, chatRoomId, connectHeaders) {
+        if (stompClient && stompClient.active) {
+            try {
+                stompClient.deactivate();
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        stompClient = new StompJs.Client({
+            webSocketFactory: () => new SockJS(`${window.location.origin}/ws?token=${encodeURIComponent(token)}`),
+            connectHeaders: connectHeaders,
+            debug: function (message) {
+                console.log(message);
+            },
+            reconnectDelay: 5000,
+            connectionTimeout: 10000,
+            beforeConnect: function () {
+                setStatus("Connecting with SockJS...");
+            },
+            onConnect: function () {
+                setStatus(`Connected with SockJS to chat room ${chatRoomId}`);
+                stompClient.subscribe(`/topic/chat/${chatRoomId}`, function (message) {
+                    appendMessage(JSON.parse(message.body));
+                });
+                stompClient.subscribe(`/user/queue/chat-notifications`, function (message) {
+                    console.log("Notification", JSON.parse(message.body));
+                });
+            },
+            onStompError: function (frame) {
+                setStatus(`SockJS STOMP error: ${frame.headers["message"] || "Unknown error"}`);
+            },
+            onWebSocketClose: function (event) {
+                setStatus(`SockJS closed: code=${event.code || "n/a"} reason=${event.reason || "n/a"}`);
+            },
+            onWebSocketError: function () {
+                setStatus("SockJS connection error");
+            }
+        });
+        stompClient.activate();
+    }
+
+    function sendViaWebSocket() {
+        const chatRoomId = chatRoomIdInput.value.trim();
+        const content = messageContentInput.value.trim();
+        if (!stompClient || !stompClient.connected) {
+            setStatus("Connect WebSocket first.");
+            return;
+        }
+        if (!chatRoomId || !content) {
+            setStatus("chatRoomId and message are required.");
+            return;
+        }
+        stompClient.publish({
+            destination: "/app/chat.sendMessage",
+            body: JSON.stringify({
+                chatRoomId: Number(chatRoomId),
+                content: content
+            })
+        });
+        messageContentInput.value = "";
+    }
+
+    async function sendViaRest() {
+        const token = normalizeToken(tokenInput.value);
+        const applicationId = applicationIdInput.value.trim();
+        const content = messageContentInput.value.trim();
+        if (!token || !applicationId || !content) {
+            setStatus("Token, applicationId and message are required for REST send.");
+            return;
+        }
+        const response = await fetch(`/api/chats/application/${applicationId}/messages`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({ content })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            setStatus(data.message || "REST send failed");
+            return;
+        }
+        appendMessage(data);
+        messageContentInput.value = "";
+        setStatus("Message sent via REST.");
+    }
+
+    document.getElementById("connectBtn").addEventListener("click", connectWebSocket);
+    document.getElementById("historyBtn").addEventListener("click", loadHistory);
+    document.getElementById("sendWsBtn").addEventListener("click", sendViaWebSocket);
+    document.getElementById("sendRestBtn").addEventListener("click", sendViaRest);
+</script>
+</body>
+</html>
