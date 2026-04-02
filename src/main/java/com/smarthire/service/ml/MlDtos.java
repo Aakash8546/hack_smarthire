@@ -45,7 +45,15 @@ public final class MlDtos {
     ) {
     }
 
-    public record SpamDetectionResult(boolean spam) {
+    public record SpamDetectionResult(
+            boolean spam,
+            boolean abusive,
+            String label,
+            double spamScore,
+            double abuseScore,
+            double normalScore,
+            String sanitizedContent
+    ) {
     }
 
     public record CheatingDetectionResult(String result) {

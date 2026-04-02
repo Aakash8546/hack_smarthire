@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import com.smarthire.config.properties.MlApiProperties;
@@ -31,6 +32,13 @@ import org.springframework.web.client.RestTemplate;
 @Service
 @RequiredArgsConstructor
 public class MlIntegrationService {
+
+    private static final List<String> ABUSIVE_TERMS = List.of(
+            "fuck", "fucking", "fucker", "fucked",
+            "bitch", "bastard", "asshole", "shit", "bullshit",
+            "motherfucker", "slut", "whore", "dick", "pussy",
+            "harami", "madarchod", "bhenchod", "bc", "mc", "chu", "chutiya"
+    );
 
     private final RestTemplate mlRestTemplate;
     private final MlApiProperties mlApiProperties;
@@ -159,15 +167,43 @@ public class MlIntegrationService {
     public MlDtos.SpamDetectionResult detectSpam(String content) {
         if (mlApiProperties.enabled()) {
             try {
-                Map<String, Object> response = post("/chat/spam-detect", Map.of("content", content));
-                return new MlDtos.SpamDetectionResult(Boolean.parseBoolean(String.valueOf(response.getOrDefault("spam", false))));
+                Map<String, Object> response = postToAbsoluteUrl(
+                        mlApiProperties.spamBaseUrl() + mlApiProperties.spamPredictPath(),
+                        Map.of("text", content)
+                );
+                log.info("Raw ML spam detection response: {}", response);
+                String label = String.valueOf(response.getOrDefault("label", "Normal"));
+                double spamScore = extractDouble(response.get("spam_score"), 0.0);
+                double abuseScore = extractDouble(response.get("abuse_score"), 0.0);
+                double normalScore = extractDouble(response.get("normal_score"), 0.0);
+                boolean spam = "spam".equalsIgnoreCase(label) || spamScore > Math.max(abuseScore, normalScore);
+                boolean abusive = "abusive".equalsIgnoreCase(label) || abuseScore > 0.0;
+                String sanitizedContent = abusive ? sanitizeAbusiveWords(content) : content;
+                return new MlDtos.SpamDetectionResult(
+                        spam,
+                        abusive,
+                        label,
+                        spamScore,
+                        abuseScore,
+                        normalScore,
+                        sanitizedContent
+                );
             } catch (Exception exception) {
                 log.warn("ML spam detection failed, using fallback: {}", exception.getMessage());
             }
         }
         String lower = content.toLowerCase(Locale.ROOT);
         boolean spam = lower.contains("buy now") || lower.contains("free money") || lower.contains("crypto scheme");
-        return new MlDtos.SpamDetectionResult(spam);
+        boolean abusive = containsAbusiveTerm(lower);
+        return new MlDtos.SpamDetectionResult(
+                spam,
+                abusive,
+                abusive ? "Abusive" : (spam ? "Spam" : "Normal"),
+                spam ? 1.0 : 0.0,
+                abusive ? 1.0 : 0.0,
+                !spam && !abusive ? 1.0 : 0.0,
+                abusive ? sanitizeAbusiveWords(content) : content
+        );
     }
 
     public MlDtos.CheatingDetectionResult detectCheating(Job job, Resume resume) {
@@ -242,6 +278,29 @@ public class MlIntegrationService {
 
     private int overlapCount(List<String> left, List<String> right) {
         return (int) left.stream().filter(skill -> right.stream().anyMatch(required -> required.equalsIgnoreCase(skill))).count();
+    }
+
+    private boolean containsAbusiveTerm(String lowerCasedContent) {
+        return ABUSIVE_TERMS.stream().anyMatch(lowerCasedContent::contains);
+    }
+
+    private String sanitizeAbusiveWords(String content) {
+        String sanitized = content;
+        for (String term : ABUSIVE_TERMS) {
+            String replacement = maskWord(term);
+            sanitized = sanitized.replaceAll("(?i)\\b" + Pattern.quote(term) + "\\b", replacement);
+        }
+        return sanitized;
+    }
+
+    private String maskWord(String word) {
+        if (word.length() <= 1) {
+            return "*";
+        }
+        if (word.length() == 2) {
+            return word.charAt(0) + "*";
+        }
+        return word.charAt(0) + "*".repeat(word.length() - 2) + word.charAt(word.length() - 1);
     }
 
     @SuppressWarnings("unchecked")
