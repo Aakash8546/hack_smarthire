@@ -9,8 +9,11 @@ public record JobResponse(
         String company,
         String location,
         String description,
+        Integer experience,
         Integer minimumExperience,
         List<String> requiredSkills,
+        String jobPackage,
+        String status,
         Long recruiterId,
         String recruiterName,
         OffsetDateTime createdAt
