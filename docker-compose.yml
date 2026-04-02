@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: smarthire-postgres
+    environment:
+      POSTGRES_DB: smarthire
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  app:
+    build: .
+    container_name: smarthire-app
+    depends_on:
+      - postgres
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: smarthire
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      MAIL_HOST: smtp-relay.brevo.com
+      MAIL_PORT: 587
+      MAIL_USERNAME: your-brevo-login
+      MAIL_PASSWORD: your-brevo-password
+      MAIL_FROM: no-reply@smarthire.local
+      SERVER_PORT: 8082
+      JWT_SECRET: ZmQxN2Y1YmQyYjVkMmQ1ZWQ2MGE4MGM4YjNlYTY5NDY2ODNkZWM1Y2RmMGU4NjQ5YjJmNGU1MDgwYjBjYjk4ZQ==
+      ML_API_BASE_URL: http://mock-ml:8099/api/ml
+      ML_API_ENABLED: "false"
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./uploads:/app/uploads
+
+volumes:
+  postgres_data:
