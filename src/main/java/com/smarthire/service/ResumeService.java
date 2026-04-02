@@ -12,7 +12,7 @@ public interface ResumeService {
 
     String deleteResume();
 
-    ResumeDownloadResponse downloadResume(Long candidateId);
+    ResumeDownloadResponse downloadResume(Long resumeId);
 
     ResumeExistsResponse hasResume(Long candidateId);
 
