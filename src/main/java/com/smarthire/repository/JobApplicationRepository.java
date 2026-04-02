@@ -16,5 +16,9 @@ public interface JobApplicationRepository extends JpaRepository<JobApplication, 
 
     List<JobApplication> findAllByJobRecruiterOrderByCreatedAtDesc(User recruiter);
 
+    List<JobApplication> findAllByJobAndJobRecruiterOrderByCreatedAtDesc(Job job, User recruiter);
+
     Optional<JobApplication> findByIdAndJobRecruiter(Long id, User recruiter);
+
+    boolean existsByCandidateAndJobRecruiter(User candidate, User recruiter);
 }

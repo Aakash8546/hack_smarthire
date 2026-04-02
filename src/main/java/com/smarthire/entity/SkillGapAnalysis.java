@@ -1,5 +1,3 @@
-
-
 package com.smarthire.entity;
 
 import java.util.ArrayList;
@@ -39,4 +37,7 @@ public class SkillGapAnalysis extends BaseEntity {
     @Lob
     @Column(nullable = false, length = 5000)
     private String roadmap;
+
+    @Column(columnDefinition = "TEXT")
+    private String learningResourcesJson;
 }
