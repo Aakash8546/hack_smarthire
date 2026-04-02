@@ -10,6 +10,8 @@ import org.springframework.validation.annotation.Validated;
 public record MlApiProperties(
         @NotBlank String baseUrl,
         @NotBlank String resumeAnalyzePath,
+        @NotBlank String skillVideosBaseUrl,
+        @NotBlank String skillVideosPath,
         @Min(1000) int timeoutMillis,
         boolean enabled,
         String apiKey,
