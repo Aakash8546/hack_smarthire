@@ -18,6 +18,7 @@ import com.smarthire.entity.User;
 import com.smarthire.entity.enums.UserRole;
 import com.smarthire.exception.BadRequestException;
 import com.smarthire.exception.ResourceNotFoundException;
+import com.smarthire.repository.JobApplicationRepository;
 import com.smarthire.repository.ResumeRepository;
 import com.smarthire.repository.UserRepository;
 import com.smarthire.service.ResumeService;
@@ -40,6 +41,7 @@ public class ResumeServiceImpl implements ResumeService {
 
     private final ResumeRepository resumeRepository;
     private final UserRepository userRepository;
+    private final JobApplicationRepository jobApplicationRepository;
     private final MlIntegrationService mlIntegrationService;
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
@@ -100,8 +102,8 @@ public class ResumeServiceImpl implements ResumeService {
 
     @Override
     @Transactional(readOnly = true)
-    public ResumeDownloadResponse downloadResume(Long candidateId) {
-        Resume resume = getAccessibleResume(candidateId);
+    public ResumeDownloadResponse downloadResume(Long resumeId) {
+        Resume resume = getAccessibleResumeByResumeId(resumeId);
         Resource resource = new FileSystemResource(resume.getFilePath());
         if (!resource.exists()) {
             throw new ResourceNotFoundException("Resume file not found on disk");
@@ -151,6 +153,24 @@ public class ResumeServiceImpl implements ResumeService {
         User candidate = getAccessibleCandidate(candidateId);
         return resumeRepository.findByCandidate(candidate)
                 .orElseThrow(() -> new ResourceNotFoundException("Resume not found"));
+    }
+
+    private Resume getAccessibleResumeByResumeId(Long resumeId) {
+        Resume resume = resumeRepository.findById(resumeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Resume not found"));
+        User currentUser = userRepository.findById(SecurityUtils.getCurrentUser().getId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (currentUser.getRole() == UserRole.CANDIDATE) {
+            if (!resume.getCandidate().getId().equals(currentUser.getId())) {
+                throw new BadRequestException("Candidates can access only their own resume");
+            }
+            return resume;
+        }
+        if (currentUser.getRole() == UserRole.RECRUITER
+                && !jobApplicationRepository.existsByCandidateAndJobRecruiter(resume.getCandidate(), currentUser)) {
+            throw new BadRequestException("Recruiter is not authorized to access this resume");
+        }
+        return resume;
     }
 
     private User getAccessibleCandidate(Long candidateId) {

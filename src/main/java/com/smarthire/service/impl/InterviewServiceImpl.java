@@ -216,8 +216,9 @@ public class InterviewServiceImpl implements InterviewService {
         User recruiter = getCurrentRecruiter();
         JobApplication application = jobApplicationRepository.findByIdAndJobRecruiter(applicationId, recruiter)
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found"));
-        if (application.getStatus() != ApplicationStatus.CALLED_FOR_INTERVIEW) {
-            throw new BadRequestException("Video interview can only be enabled when status is CALLED_FOR_INTERVIEW");
+        if (application.getStatus() != ApplicationStatus.INTERVIEW
+                && application.getStatus() != ApplicationStatus.CALLED_FOR_INTERVIEW) {
+            throw new BadRequestException("Video interview can only be enabled when status is INTERVIEW");
         }
         Resume resume = resumeRepository.findByCandidate(application.getCandidate())
                 .orElseThrow(() -> new BadRequestException("Candidate resume not found"));

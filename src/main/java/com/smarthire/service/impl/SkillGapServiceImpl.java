@@ -1,5 +1,7 @@
 package com.smarthire.service.impl;
 
+import java.util.List;
+
 import com.smarthire.dto.recruiter.SkillGapResponse;
 import com.smarthire.entity.Job;
 import com.smarthire.entity.Resume;
@@ -19,6 +21,9 @@ import com.smarthire.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 @RequiredArgsConstructor
@@ -29,6 +34,7 @@ public class SkillGapServiceImpl implements SkillGapService {
     private final JobRepository jobRepository;
     private final UserRepository userRepository;
     private final MlIntegrationService mlIntegrationService;
+    private final ObjectMapper objectMapper;
 
     @Override
     @Transactional
@@ -49,9 +55,10 @@ public class SkillGapServiceImpl implements SkillGapService {
         analysis.setJob(job);
         analysis.setMissingSkills(result.missingSkills());
         analysis.setRoadmap(result.roadmap());
+        analysis.setLearningResourcesJson(writeJson(result.learningResources()));
         SkillGapAnalysis savedAnalysis = skillGapAnalysisRepository.save(analysis);
         return new SkillGapResponse(savedAnalysis.getId(), job.getId(), job.getTitle(), savedAnalysis.getMissingSkills(),
-                savedAnalysis.getRoadmap(), savedAnalysis.getCreatedAt());
+                savedAnalysis.getRoadmap(), mapLearningResources(result.learningResources()), savedAnalysis.getCreatedAt());
     }
 
     private User getCurrentRecruiter() {
@@ -61,5 +68,32 @@ public class SkillGapServiceImpl implements SkillGapService {
             throw new BadRequestException("Only recruiters can perform this action");
         }
         return user;
+    }
+
+    private String writeJson(List<MlDtos.SkillLearningResource> resources) {
+        try {
+            return objectMapper.writeValueAsString(resources);
+        } catch (JacksonException exception) {
+            throw new BadRequestException("Failed to store learning resources: " + exception.getMessage());
+        }
+    }
+
+    private List<SkillGapResponse.LearningResource> mapLearningResources(List<MlDtos.SkillLearningResource> resources) {
+        return resources.stream()
+                .map(resource -> new SkillGapResponse.LearningResource(
+                        resource.skill(),
+                        resource.searchQuery(),
+                        resource.videos().stream()
+                                .map(video -> new SkillGapResponse.VideoResource(
+                                        video.title(),
+                                        video.url(),
+                                        video.channel(),
+                                        video.duration(),
+                                        video.views(),
+                                        video.thumbnail()
+                                ))
+                                .toList()
+                ))
+                .toList();
     }
 }
