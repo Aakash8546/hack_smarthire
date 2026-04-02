@@ -42,7 +42,27 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
+                        .requestMatchers(
+                                "/",
+                                "/api/auth/**",
+                                "/api/system/status",
+                                "/v3/api-docs/**",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/webjars/**",
+                                "/*.html",
+                                "/css/**",
+                                "/js/**",
+                                "/images/**",
+                                "/static/**",
+                                "/ws/**",
+                                "/ws",
+                                "/ws-native/**",
+                                "/ws-native",
+                                "/test-chat.html",
+                                "/favicon.ico",
+                                "/error"
+                        )
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/jobs/**")
                         .authenticated()
@@ -73,7 +93,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(resolveAllowedOrigins());
+        configuration.setAllowedOriginPatterns(resolveAllowedOriginPatterns());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With", "X-API-KEY"));
         configuration.setExposedHeaders(List.of("Authorization", "Content-Disposition"));
@@ -85,12 +105,14 @@ public class SecurityConfig {
         return source;
     }
 
-    private List<String> resolveAllowedOrigins() {
+    private List<String> resolveAllowedOriginPatterns() {
         List<String> origins = new ArrayList<>();
         origins.add(appProperties.frontend().baseUrl());
-        origins.add("http://localhost:3000");
-        origins.add("http://localhost:5173");
-        origins.add("http://localhost:5174");
+        origins.add("http://localhost:*");
+        origins.add("http://127.0.0.1:*");
+        origins.add("https://localhost:*");
+        origins.add("https://127.0.0.1:*");
+
         return origins.stream().distinct().toList();
     }
 }

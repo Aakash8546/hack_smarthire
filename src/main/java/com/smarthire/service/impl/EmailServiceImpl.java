@@ -75,6 +75,24 @@ public class EmailServiceImpl implements EmailService {
         ));
     }
 
+    @Override
+    @Async
+    public void sendChatMessageNotificationEmail(String receiverEmail, String receiverName, String senderName,
+                                                 String jobTitle, String messagePreview) {
+        String preview = messagePreview == null ? "" : messagePreview.trim();
+        if (preview.length() > 120) {
+            preview = preview.substring(0, 120) + "...";
+        }
+        sendEmail(receiverEmail, "New SmartHire chat message", """
+                Hello %s,
+
+                You have a new message from %s regarding %s.
+                Message: %s
+
+                Open SmartHire to reply.
+                """.formatted(receiverName, senderName, jobTitle, preview));
+    }
+
     private void sendEmail(String to, String subject, String body) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(appProperties.mail().from());

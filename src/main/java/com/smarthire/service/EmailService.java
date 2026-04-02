@@ -10,4 +10,6 @@ public interface EmailService {
 
     void sendApplicationStatusUpdatedEmail(String candidateEmail, String candidateName, String jobTitle, String companyName,
                                            ApplicationStatus status, String optionalMessage);
+
+    void sendChatMessageNotificationEmail(String receiverEmail, String receiverName, String senderName, String jobTitle, String messagePreview);
 }
