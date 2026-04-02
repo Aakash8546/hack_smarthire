@@ -3,10 +3,13 @@ package com.smarthire.entity;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.smarthire.entity.enums.JobStatus;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Lob;
@@ -37,6 +40,13 @@ public class Job extends BaseEntity {
 
     @Column(nullable = false)
     private Integer minimumExperience;
+
+    @Column(name = "job_package", nullable = false)
+    private String jobPackage;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private JobStatus status;
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "job_skills", joinColumns = @JoinColumn(name = "job_id"))
