@@ -25,7 +25,24 @@ public final class MlDtos {
     public record MockInterviewResult(String technicalAnalysis, String behavioralAnalysis) {
     }
 
-    public record SkillGapResult(List<String> missingSkills, String roadmap) {
+    public record SkillGapResult(List<String> missingSkills, String roadmap, List<SkillLearningResource> learningResources) {
+    }
+
+    public record SkillLearningResource(
+            String skill,
+            String searchQuery,
+            List<LearningVideo> videos
+    ) {
+    }
+
+    public record LearningVideo(
+            String title,
+            String url,
+            String channel,
+            String duration,
+            String views,
+            String thumbnail
+    ) {
     }
 
     public record SpamDetectionResult(boolean spam) {

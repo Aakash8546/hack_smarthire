@@ -23,6 +23,8 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 @Slf4j
@@ -45,8 +47,14 @@ public class MlIntegrationService {
                 String analyzedFileName = extractResumeContractFileName(response, fileName);
                 String summary = "Resume analyzed successfully using external ML model.";
                 return new MlDtos.ResumeAnalysisResult(analyzedFileName, score, skills, summary, experienceYears, results, response);
+            } catch (HttpStatusCodeException exception) {
+                log.warn("ML resume analysis failed with HTTP {}. Response body: {}",
+                        exception.getStatusCode(), exception.getResponseBodyAsString());
+            } catch (ResourceAccessException exception) {
+                log.warn("ML resume analysis resource access failure for {}{}: {}",
+                        mlApiProperties.baseUrl(), mlApiProperties.resumeAnalyzePath(), exception.getMessage());
             } catch (Exception exception) {
-                log.warn("ML resume analysis failed, using fallback: {}", exception.getMessage());
+                log.warn("ML resume analysis failed, using fallback. Cause: {}", exception.getMessage(), exception);
             }
         }
 
@@ -109,27 +117,43 @@ public class MlIntegrationService {
     }
 
     public MlDtos.SkillGapResult analyzeSkillGap(Resume resume, Job job) {
-        if (mlApiProperties.enabled()) {
-            try {
-                Map<String, Object> response = post("/skills/gap", Map.of(
-                        "resumeSkills", resume.getExtractedSkills(),
-                        "jobSkills", job.getRequiredSkills(),
-                        "jobTitle", job.getTitle()
-                ));
-                return new MlDtos.SkillGapResult(castList(response.get("missingSkills")),
-                        String.valueOf(response.getOrDefault("roadmap", "Roadmap from ML service")));
-            } catch (Exception exception) {
-                log.warn("ML skill gap analysis failed, using fallback: {}", exception.getMessage());
-            }
-        }
-
         List<String> missingSkills = job.getRequiredSkills().stream()
                 .filter(skill -> resume.getExtractedSkills().stream().noneMatch(existing -> existing.equalsIgnoreCase(skill)))
                 .toList();
-        String roadmap = missingSkills.isEmpty()
-                ? "No major skill gap detected. Focus on interview preparation and relevant project examples."
-                : "Prioritize learning " + String.join(", ", missingSkills) + ". Build one portfolio project covering these areas, then rehearse role-specific interview questions.";
-        return new MlDtos.SkillGapResult(missingSkills, roadmap);
+        if (missingSkills.isEmpty()) {
+            return new MlDtos.SkillGapResult(
+                    missingSkills,
+                    "No major skill gap detected. Focus on interview preparation and relevant project examples.",
+                    List.of()
+            );
+        }
+
+        if (mlApiProperties.enabled()) {
+            try {
+                log.info("Sending missing skills {} to learning videos endpoint {}{}", missingSkills,
+                        mlApiProperties.skillVideosBaseUrl(), mlApiProperties.skillVideosPath());
+                Map<String, Object> response = postToAbsoluteUrl(
+                        mlApiProperties.skillVideosBaseUrl() + mlApiProperties.skillVideosPath(),
+                        Map.of("skills", missingSkills, "max_results", 3)
+                );
+                log.info("Raw ML skill videos response: {}", response);
+                List<MlDtos.SkillLearningResource> resources = extractLearningResources(response);
+                String roadmap = buildLearningRoadmap(missingSkills, resources);
+                return new MlDtos.SkillGapResult(missingSkills, roadmap, resources);
+            } catch (HttpStatusCodeException exception) {
+                log.warn("ML skill videos lookup failed with HTTP {}. Response body: {}",
+                        exception.getStatusCode(), exception.getResponseBodyAsString());
+            } catch (ResourceAccessException exception) {
+                log.warn("ML skill videos resource access failure for {}{}: {}",
+                        mlApiProperties.skillVideosBaseUrl(), mlApiProperties.skillVideosPath(), exception.getMessage());
+            } catch (Exception exception) {
+                log.warn("ML skill videos lookup failed, using fallback roadmap. Cause: {}", exception.getMessage(), exception);
+            }
+        }
+
+        String roadmap = "Prioritize learning " + String.join(", ", missingSkills)
+                + ". Build one portfolio project covering these areas, then rehearse role-specific interview questions.";
+        return new MlDtos.SkillGapResult(missingSkills, roadmap, List.of());
     }
 
     public MlDtos.SpamDetectionResult detectSpam(String content) {
@@ -165,11 +189,14 @@ public class MlIntegrationService {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         addApiKeyHeader(headers);
-        return mlRestTemplate.exchange(
-                mlApiProperties.baseUrl() + path,
-                HttpMethod.POST,
-                new HttpEntity<>(payload, headers),
-                Map.class).getBody();
+        return mlRestTemplate.exchange(mlApiProperties.baseUrl() + path, HttpMethod.POST, new HttpEntity<>(payload, headers), Map.class).getBody();
+    }
+
+    private Map<String, Object> postToAbsoluteUrl(String url, Map<String, Object> payload) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        addApiKeyHeader(headers);
+        return mlRestTemplate.exchange(url, HttpMethod.POST, new HttpEntity<>(payload, headers), Map.class).getBody();
     }
 
     @SuppressWarnings("unchecked")
@@ -187,6 +214,9 @@ public class MlIntegrationService {
 
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("file", resource);
+
+        log.info("Sending resume to ML endpoint {}{} with file {}", mlApiProperties.baseUrl(),
+                mlApiProperties.resumeAnalyzePath(), fileName);
 
         return mlRestTemplate.exchange(
                 mlApiProperties.baseUrl() + mlApiProperties.resumeAnalyzePath(),
@@ -388,5 +418,69 @@ public class MlIntegrationService {
         } catch (NumberFormatException exception) {
             return defaultValue;
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<MlDtos.SkillLearningResource> extractLearningResources(Map<String, Object> response) {
+        Object resultsObject = response != null ? response.get("results") : null;
+        if (!(resultsObject instanceof List<?> resultsList)) {
+            return List.of();
+        }
+        List<MlDtos.SkillLearningResource> resources = new ArrayList<>();
+        for (Object item : resultsList) {
+            Map<String, Object> resourceMap = extractMap(item);
+            if (resourceMap.isEmpty()) {
+                continue;
+            }
+            List<MlDtos.LearningVideo> videos = castVideoList(resourceMap.get("videos"));
+            resources.add(new MlDtos.SkillLearningResource(
+                    String.valueOf(resourceMap.getOrDefault("skill", "")),
+                    String.valueOf(resourceMap.getOrDefault("search_query", "")),
+                    videos
+            ));
+        }
+        return resources;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<MlDtos.LearningVideo> castVideoList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        List<MlDtos.LearningVideo> videos = new ArrayList<>();
+        for (Object item : list) {
+            Map<String, Object> map = extractMap(item);
+            if (map.isEmpty()) {
+                continue;
+            }
+            videos.add(new MlDtos.LearningVideo(
+                    String.valueOf(map.getOrDefault("title", "")),
+                    String.valueOf(map.getOrDefault("url", "")),
+                    String.valueOf(map.getOrDefault("channel", "")),
+                    map.get("duration") != null ? String.valueOf(map.get("duration")) : null,
+                    map.get("views") != null ? String.valueOf(map.get("views")) : null,
+                    map.get("thumbnail") != null ? String.valueOf(map.get("thumbnail")) : null
+            ));
+        }
+        return videos;
+    }
+
+    private String buildLearningRoadmap(List<String> missingSkills, List<MlDtos.SkillLearningResource> resources) {
+        if (resources.isEmpty()) {
+            return "Prioritize learning " + String.join(", ", missingSkills)
+                    + ". Build one portfolio project covering these areas, then rehearse role-specific interview questions.";
+        }
+
+        List<String> steps = new ArrayList<>();
+        for (MlDtos.SkillLearningResource resource : resources) {
+            String firstVideo = resource.videos().isEmpty() ? null : resource.videos().get(0).title();
+            if (firstVideo == null || firstVideo.isBlank()) {
+                steps.add("Study " + resource.skill() + " using the recommended tutorials.");
+            } else {
+                steps.add("Learn " + resource.skill() + " starting with \"" + firstVideo + "\".");
+            }
+        }
+        steps.add("After learning the missing skills, build one project that uses them together and revisit the job requirements.");
+        return String.join(" ", steps);
     }
 }
