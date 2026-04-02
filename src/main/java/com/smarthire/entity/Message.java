@@ -1,10 +1,12 @@
 package com.smarthire.entity;
 
+import com.smarthire.entity.enums.MessageStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.Getter;
@@ -24,10 +26,21 @@ public class Message extends BaseEntity {
     @JoinColumn(name = "sender_id", nullable = false)
     private User sender;
 
-    @Lob
-    @Column(nullable = false, length = 4000)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "receiver_id", nullable = false)
+    private User receiver;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "job_id", nullable = false)
+    private Job job;
+
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
     @Column(nullable = false)
     private boolean spam;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private MessageStatus status;
 }
