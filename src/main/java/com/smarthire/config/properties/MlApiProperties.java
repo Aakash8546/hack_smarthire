@@ -12,6 +12,8 @@ public record MlApiProperties(
         @NotBlank String resumeAnalyzePath,
         @NotBlank String skillVideosBaseUrl,
         @NotBlank String skillVideosPath,
+        @NotBlank String spamBaseUrl,
+        @NotBlank String spamPredictPath,
         @Min(1000) int timeoutMillis,
         boolean enabled,
         String apiKey,
