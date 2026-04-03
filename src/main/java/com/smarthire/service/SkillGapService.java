@@ -4,5 +4,5 @@ import com.smarthire.dto.recruiter.SkillGapResponse;
 
 public interface SkillGapService {
 
-    SkillGapResponse analyzeSkillGap(Long candidateId, Long jobId);
+    SkillGapResponse analyzeSkillGap(Long jobId);
 }

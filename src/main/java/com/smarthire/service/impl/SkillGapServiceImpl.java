@@ -22,7 +22,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
@@ -38,15 +37,10 @@ public class SkillGapServiceImpl implements SkillGapService {
 
     @Override
     @Transactional
-    public SkillGapResponse analyzeSkillGap(Long candidateId, Long jobId) {
-        User recruiter = getCurrentRecruiter();
+    public SkillGapResponse analyzeSkillGap(Long jobId) {
+        User candidate = getCurrentCandidate();
         Job job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found"));
-        if (!job.getRecruiter().getId().equals(recruiter.getId())) {
-            throw new BadRequestException("You can analyze skill gaps only for your own jobs");
-        }
-        User candidate = userRepository.findById(candidateId)
-                .orElseThrow(() -> new ResourceNotFoundException("Candidate not found"));
         Resume resume = resumeRepository.findByCandidate(candidate)
                 .orElseThrow(() -> new BadRequestException("Candidate resume not found"));
         MlDtos.SkillGapResult result = mlIntegrationService.analyzeSkillGap(resume, job);
@@ -61,11 +55,11 @@ public class SkillGapServiceImpl implements SkillGapService {
                 savedAnalysis.getRoadmap(), mapLearningResources(result.learningResources()), savedAnalysis.getCreatedAt());
     }
 
-    private User getCurrentRecruiter() {
+    private User getCurrentCandidate() {
         User user = userRepository.findById(SecurityUtils.getCurrentUser().getId())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        if (user.getRole() != UserRole.RECRUITER) {
-            throw new BadRequestException("Only recruiters can perform this action");
+        if (user.getRole() != UserRole.CANDIDATE) {
+            throw new BadRequestException("Only candidates can perform this action");
         }
         return user;
     }

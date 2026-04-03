@@ -5,13 +5,11 @@ import java.util.List;
 import com.smarthire.dto.common.ApplicationResponse;
 import com.smarthire.dto.common.JobResponse;
 import com.smarthire.dto.recruiter.CreateJobRequest;
-import com.smarthire.dto.recruiter.SkillGapResponse;
 import com.smarthire.dto.recruiter.UpdateApplicationStatusRequest;
 import com.smarthire.dto.recruiter.VideoInterviewResponse;
 import com.smarthire.service.ApplicationService;
 import com.smarthire.service.InterviewService;
 import com.smarthire.service.JobService;
-import com.smarthire.service.SkillGapService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -33,7 +31,6 @@ public class RecruiterController {
 
     private final JobService jobService;
     private final ApplicationService applicationService;
-    private final SkillGapService skillGapService;
     private final InterviewService interviewService;
 
     @PostMapping("/jobs")
@@ -65,12 +62,6 @@ public class RecruiterController {
     public ResponseEntity<ApplicationResponse> updateStatus(@PathVariable Long applicationId,
                                                             @Valid @RequestBody UpdateApplicationStatusRequest request) {
         return ResponseEntity.ok(applicationService.updateStatus(applicationId, request));
-    }
-
-    @PostMapping("/skill-gap")
-    public ResponseEntity<SkillGapResponse> analyzeSkillGap(@RequestParam Long candidateId,
-                                                            @RequestParam Long jobId) {
-        return ResponseEntity.ok(skillGapService.analyzeSkillGap(candidateId, jobId));
     }
 
     @PostMapping("/applications/{applicationId}/video-interview")

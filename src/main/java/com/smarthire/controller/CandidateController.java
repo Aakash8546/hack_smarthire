@@ -15,10 +15,12 @@ import com.smarthire.dto.candidate.SubmitMockInterviewAnswerResponse;
 import com.smarthire.dto.common.ApplicationResponse;
 import com.smarthire.dto.common.JobResponse;
 import com.smarthire.dto.recruiter.ApplyJobRequest;
+import com.smarthire.dto.recruiter.SkillGapResponse;
 import com.smarthire.service.ApplicationService;
 import com.smarthire.service.InterviewService;
 import com.smarthire.service.JobService;
 import com.smarthire.service.ResumeService;
+import com.smarthire.service.SkillGapService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -44,6 +46,7 @@ public class CandidateController {
     private final JobService jobService;
     private final ApplicationService applicationService;
     private final InterviewService interviewService;
+    private final SkillGapService skillGapService;
 
     @PostMapping(value = "/resume", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ResumeUploadResponse> uploadResume(@RequestParam("file") MultipartFile file) {
@@ -78,6 +81,11 @@ public class CandidateController {
     @GetMapping("/jobs/recommendations")
     public ResponseEntity<JobRecommendationResponse> recommendJobs() {
         return ResponseEntity.ok(jobService.recommendJobs());
+    }
+
+    @PostMapping("/jobs/{jobId}/skill-gap")
+    public ResponseEntity<SkillGapResponse> analyzeSkillGap(@PathVariable Long jobId) {
+        return ResponseEntity.ok(skillGapService.analyzeSkillGap(jobId));
     }
 
     @PostMapping("/jobs/{jobId}/apply")
