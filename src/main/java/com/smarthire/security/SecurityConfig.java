@@ -112,6 +112,8 @@ public class SecurityConfig {
         origins.add("http://127.0.0.1:*");
         origins.add("https://localhost:*");
         origins.add("https://127.0.0.1:*");
+        origins.add("https://smarthire001.netlify.app");
+
 
         return origins.stream().distinct().toList();
     }
