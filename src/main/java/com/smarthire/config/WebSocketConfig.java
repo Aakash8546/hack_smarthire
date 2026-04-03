@@ -36,7 +36,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                         "http://127.0.0.1:*",
                         "https://localhost:*",
                         "https://127.0.0.1:*",
-                        "https://smarthire001.netlify.app:*"
+                        "https://smarthire001.netlify.app"
                 )
                 .addInterceptors(webSocketHandshakeAuthInterceptor);
 
@@ -47,7 +47,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                         "http://127.0.0.1:*",
                         "https://localhost:*",
                         "https://127.0.0.1:*",
-                        "https://smarthire001.netlify.app:*"
+                        "https://smarthire001.netlify.app"
                 )
                 .addInterceptors(webSocketHandshakeAuthInterceptor)
                 .withSockJS();
