@@ -192,6 +192,10 @@ public class MlIntegrationService {
                 log.warn("ML spam detection failed, using fallback: {}", exception.getMessage());
             }
         }
+        return detectSpamLocally(content);
+    }
+
+    public MlDtos.SpamDetectionResult detectSpamLocally(String content) {
         String lower = content.toLowerCase(Locale.ROOT);
         boolean spam = lower.contains("buy now") || lower.contains("free money") || lower.contains("crypto scheme");
         boolean abusive = containsAbusiveTerm(lower);
