@@ -90,7 +90,7 @@ public class ResumeServiceImpl implements ResumeService {
         Resume resume = resumeRepository.findByCandidate(candidate)
                 .orElseThrow(() -> new ResourceNotFoundException("Resume not found"));
         try {
-            Files.deleteIfExists(Path.of(resume.getFilePath()));
+            Files.deleteIfExists(resolveResumePath(resume));
         } catch (IOException exception) {
             throw new BadRequestException("Failed to delete resume file: " + exception.getMessage());
         }
@@ -104,9 +104,9 @@ public class ResumeServiceImpl implements ResumeService {
     @Transactional(readOnly = true)
     public ResumeDownloadResponse downloadResume(Long resumeId) {
         Resume resume = getAccessibleResumeByResumeId(resumeId);
-        Resource resource = new FileSystemResource(resume.getFilePath());
+        Resource resource = new FileSystemResource(resolveResumePath(resume));
         if (!resource.exists()) {
-            throw new ResourceNotFoundException("Resume file not found on disk");
+            throw new ResourceNotFoundException("Resume record exists but the actual file is missing on the server");
         }
         return new ResumeDownloadResponse(resource, resume.getOriginalFileName());
     }
@@ -171,6 +171,31 @@ public class ResumeServiceImpl implements ResumeService {
             throw new BadRequestException("Recruiter is not authorized to access this resume");
         }
         return resume;
+    }
+
+    private Path resolveResumePath(Resume resume) {
+        if (resume.getFilePath() != null && !resume.getFilePath().isBlank()) {
+            Path storedPath = Path.of(resume.getFilePath()).toAbsolutePath().normalize();
+            if (Files.exists(storedPath)) {
+                return storedPath;
+            }
+        }
+
+        Path uploadDirectory = Path.of(appProperties.file().uploadDir()).toAbsolutePath().normalize();
+        if (resume.getFileName() != null && !resume.getFileName().isBlank()) {
+            Path fallbackPath = uploadDirectory.resolve(resume.getFileName()).normalize();
+            if (Files.exists(fallbackPath)) {
+                return fallbackPath;
+            }
+        }
+
+        if (resume.getFilePath() != null && !resume.getFilePath().isBlank()) {
+            return Path.of(resume.getFilePath()).toAbsolutePath().normalize();
+        }
+        if (resume.getFileName() != null && !resume.getFileName().isBlank()) {
+            return uploadDirectory.resolve(resume.getFileName()).normalize();
+        }
+        throw new ResourceNotFoundException("Resume file location is missing");
     }
 
     private User getAccessibleCandidate(Long candidateId) {
